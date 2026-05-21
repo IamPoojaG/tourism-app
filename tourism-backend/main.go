@@ -1,89 +1,55 @@
 package main
-
 import (
-  "net/http"
-  "time"
+	"net/http"
 
-  "github.com/gin-gonic/gin"
-  "github.com/golang-jwt/jwt/v5"
-  "golang.org/x/crypto/bcrypt"
+	"github.com/gin-gonic/gin"
 )
 
-var jwtKey = []byte("secret_key")
-
-type User struct {
-  Email string `json:"email"`
-  Password string `"json:"password"`
+type LoginInput struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
 }
 
-var users = map[string]string{} // temp storage
 func main() {
-  r := gin.Default()
+	router := gin.Default()
 
-  r.POST("/register",Register)
-  r.POST("/login",Login)
+	// CORS Middleware
+	router.Use(func(c *gin.Context) {
+		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
 
-  auth :=r.Group("/")
-  auth.Use(AuthMiddleware())
-  auth.GET("/dashboard",Dashboard)
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(204)
+			return
+		}
 
-  r.Run(":8080")
-}
+		c.Next()
+	})
 
-func Register(c *gin.Context) {
-  var user User
-  c.BindJSON(&user)
+	router.POST("/login", func(c *gin.Context) {
+		var input LoginInput
 
-  hash, _ := bcrypt.GenerateFromPassword([]byte(user.Password),bcrypt.DefaultCost)
-  users[user.Email] = string(hash)
+		if err := c.ShouldBindJSON(&input); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"message": "Invalid input",
+			})
+			return
+		}
 
-  c.JSON(http.StatusOK, gin.H{"message": "Registered successfully"})
+		// Dummy Authentication
+		if input.Email == "admin@gmail.com" && input.Password == "123456" {
+			c.JSON(http.StatusOK, gin.H{
+				"message": "Login successful",
+				"token":   "sample-jwt-token",
+			})
+			return
+		}
 
-}
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"message": "Invalid email or password",
+		})
+	})
 
-func Login(c *gin.Context){
-  var user User
-  c.BindJSON(&user)
-
-  stored, ok := users[user.Email]
-  if !ok {
-    c.JSON(http.StatusUnauthorized, gin.H{"error": "User not found"})
-    return
-  }
-
-  err := bcrypt.CompareHashAndPassword([]byte(stored),[]byte(user.Password))
-  if err != nil {
-    c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid password"})
-    return
-  }
-
-  token := jwt.NewWithClaims(jwt.SigningMethodES256, jwt.MapClaims{
-    "email": user.Email,
-    "exp": time.Now().Add(time.Hour * 24).Unix(),
-  })
-
-  tokenString, _ := token.SignedString(jwtKey)
-
-  c.JSON(http.StatusOK, gin.H{"token": tokenString})
-}
-
-func Dashboard(c *gin.Context) {
-  c.JSON(http.StatusOK, gin.H{"message": "Welcome to Tourism Dashboard"})
-}
-
-func AuthMiddleware() gin.HandlerFunc {
-  return func(c *gin.Context) {
-    tokenStr := c.GetHeader("Authorization")
-
-    token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{},error){
-      return jwtKey, nil
-    })
-    
-    if err != nil || !token.Valid {
-      c.JSON(http.StatusUnauthorized, gin.H{"error": "Unathorized"})
-      c.Abort()
-      return
-    }
-    c.Next()
-  }
+	router.Run(":8080")
 }
